@@ -25,6 +25,8 @@ $provider = new AlexMasterov\OAuth2\Client\Provider\StackExchange([
     'clientSecret' => '{client_secret}',
     'redirectUri'  => '{redirect_uri}',
     'state'        => '{state}',
+    'key'          => '{key}',
+    'site'         => '{site}',
 ]);
 ```
 
@@ -39,20 +41,21 @@ if (empty($_GET['code'])) {
     // If we don't have an authorization code then get one
     $provider->authorize();
 }
+
 // Try to get an access token (using the authorization code grant)
 $token = $provider->getAccessToken('authorization_code', [
     'code' => $_GET['code']
 ]);
+
 // Optional: Now you have a token you can look up a users profile data
 try {
     // We got an access token, let's now get the owner details
     $ownerDetails = $provider->getResourceOwner($token);
-    // Use these details to create a new profile
-    printf('Hello, %s!', $ownerDetails->getFirstName());
 } catch (\Exception $e) {
     // Failed to get user details
     exit('Something went wrong: ' . $e->getMessage());
 }
+
 // Use this to interact with an API on the users behalf
 echo $token->accessToken;
 ```
