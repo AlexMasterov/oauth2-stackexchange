@@ -1,25 +1,20 @@
 <?php
+declare(strict_types=1);
 
 namespace AlexMasterov\OAuth2\Client\Provider;
 
-use League\OAuth2\Client\Provider\ResourceOwnerInterface;
-use League\OAuth2\Client\Tool\ArrayAccessorTrait;
+use League\OAuth2\Client\{
+    Provider\ResourceOwnerInterface,
+    Tool\ArrayAccessorTrait
+};
 
 class StackExchangeResourceOwner implements ResourceOwnerInterface
 {
     use ArrayAccessorTrait;
 
-    /**
-     * @var array
-     */
-    protected $response = [];
-
-    /**
-     * @param array $response
-     */
     public function __construct(array $response = [])
     {
-        $this->response = $this->getValueByKey($response, 'items', []);
+        $this->items = $this->getValueByKey($response, 'items', []);
     }
 
     /**
@@ -27,8 +22,10 @@ class StackExchangeResourceOwner implements ResourceOwnerInterface
      */
     public function getId()
     {
+        $items = $this->items;
+
         $ids = [];
-        foreach ($this->response as $item) {
+        foreach ($items as $item) {
             $ids[] = $this->getValueByKey($item, 'user_id');
         }
 
@@ -40,6 +37,11 @@ class StackExchangeResourceOwner implements ResourceOwnerInterface
      */
     public function toArray()
     {
-        return $this->response;
+        return $this->items;
     }
+
+    /**
+     * @var array
+     */
+    protected $items = [];
 }

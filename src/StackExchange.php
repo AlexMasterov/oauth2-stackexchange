@@ -2,18 +2,51 @@
 
 namespace AlexMasterov\OAuth2\Client\Provider;
 
-use AlexMasterov\OAuth2\Client\Provider\Exception\StackExchangeException;
-use GuzzleHttp\Exception\BadResponseException;
-use League\OAuth2\Client\Provider\AbstractProvider;
-use League\OAuth2\Client\Token\AccessToken;
-use League\OAuth2\Client\Tool\BearerAuthorizationTrait;
-use Psr\Http\Message\RequestInterface;
+use AlexMasterov\OAuth2\Client\Provider\StackExchangeException;
+use League\OAuth2\Client\{
+    Provider\AbstractProvider,
+    Token\AccessToken,
+    Tool\BearerAuthorizationTrait
+};
 use Psr\Http\Message\ResponseInterface;
-use UnexpectedValueException;
 
 class StackExchange extends AbstractProvider
 {
     use BearerAuthorizationTrait;
+
+    /**
+     * @inheritDoc
+     */
+    public function getBaseAuthorizationUrl()
+    {
+        return $this->urlAuthorize;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getBaseAccessTokenUrl(array $params)
+    {
+        if (empty($params['code'])) {
+            $params['code'] = '';
+        }
+
+        return $this->urlAccessToken . '?' .
+            $this->buildQueryString($params);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getResourceOwnerDetailsUrl(AccessToken $token)
+    {
+        return $this->urlApi . 'me?' .
+            $this->buildQueryString([
+                'access_token' => (string) $token,
+                'key'          => $this->key,
+                'site'         => $this->site,
+            ]);
+    }
 
     /**
      * @var string
@@ -58,40 +91,6 @@ class StackExchange extends AbstractProvider
     /**
      * @inheritDoc
      */
-    public function getBaseAuthorizationUrl()
-    {
-        return $this->urlAuthorize;
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function getBaseAccessTokenUrl(array $params)
-    {
-        if (empty($params['code'])) {
-            $params['code'] = '';
-        }
-
-        return $this->urlAccessToken.'?'.
-            $this->buildQueryString($params);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function getResourceOwnerDetailsUrl(AccessToken $token)
-    {
-        return $this->urlApi.'/me?'.
-            $this->buildQueryString([
-                'access_token' => (string) $token,
-                'key'          => $this->key,
-                'site'         => $this->site
-            ]);
-    }
-
-    /**
-     * @inheritDoc
-     */
     protected function getDefaultScopes()
     {
         return [];
@@ -127,9 +126,9 @@ class StackExchange extends AbstractProvider
     {
         $type = $this->getContentType($response);
 
-        if (strpos($type, 'plain') !== false) {
+        if (\strpos($type, 'plain') !== false) {
             $content = (string) $response->getBody();
-            parse_str($content, $parsed);
+            \parse_str($content, $parsed);
 
             return $parsed;
         }
