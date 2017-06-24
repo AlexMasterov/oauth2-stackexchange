@@ -1,187 +1,172 @@
 <?php
+declare(strict_types=1);
 
-namespace AlexMasterov\OAuth2\Client\Tests\Provider;
+namespace AlexMasterov\OAuth2\Client\Provider\Tests;
 
-use AlexMasterov\OAuth2\Client\Provider\Exception\StackExchangeException;
-use AlexMasterov\OAuth2\Client\Provider\StackExchange;
-use Eloquent\Phony\Phpunit\Phony;
-use GuzzleHttp\ClientInterface;
-use League\OAuth2\Client\Token\AccessToken;
+use AlexMasterov\OAuth2\Client\Provider\{
+    StackExchange,
+    StackExchangeException,
+    StackExchangeResourceOwner,
+    Tests\CanAccessTokenStub,
+    Tests\CanMockHttp
+};
 use PHPUnit\Framework\TestCase;
-use Psr\Http\Message\ResponseInterface;
 
 class StackExchangeTest extends TestCase
 {
-    /**
-     * @var StackExchange
-     */
-    private $provider;
-
-    protected function setUp()
-    {
-        $this->provider = new StackExchange([
-            'clientId'     => 'mock_client_id',
-            'clientSecret' => 'mock_secret',
-            'redirectUri'  => 'mock_redirect_uri',
-        ]);
-    }
-
-    protected function tearDown()
-    {
-        parent::tearDown();
-    }
-
-    protected function mockResponse($body)
-    {
-        $response = Phony::mock(ResponseInterface::class);
-        $response->getHeader->with('content-type')->returns('application/json');
-        $response->getBody->returns(json_encode($body));
-
-        return $response;
-    }
-
-    protected function mockClient(ResponseInterface $response)
-    {
-        $client = Phony::mock(ClientInterface::class);
-        $client->send->returns($response);
-
-        return $client;
-    }
-
-    protected function getMethod($class, $name)
-    {
-        $class = new \ReflectionClass($class);
-        $method = $class->getMethod($name);
-        $method->setAccessible(true);
-
-        return $method;
-    }
+    use CanAccessTokenStub;
+    use CanMockHttp;
 
     public function testAuthorizationUrl()
     {
-        // Run
-        $url = $this->provider->getAuthorizationUrl();
-        $path = \parse_url($url, PHP_URL_PATH);
+        // Execute
+        $url = $this->provider()
+            ->getAuthorizationUrl();
 
         // Verify
-        $this->assertSame('/oauth', $path);
+        self::assertSame('/oauth', path($url));
     }
 
     public function testBaseAccessTokenUrl()
     {
-        $params = [];
+        static $params = [];
 
-        // Run
-        $url = $this->provider->getBaseAccessTokenUrl($params);
-        $path = \parse_url($url, PHP_URL_PATH);
+        // Execute
+        $url = $this->provider()
+            ->getBaseAccessTokenUrl($params);
 
         // Verify
-        $this->assertSame('/oauth/access_token', $path);
+        self::assertSame('/oauth/access_token', path($url));
+    }
+
+    public function testResourceOwnerDetailsUrl()
+    {
+        // Stub
+        $apiUrl = $this->apiUrl();
+        $tokenParams = [
+            'access_token' => 'mock_access_token',
+            'site' => 'stackoverflow',
+        ];
+
+        list($accessToken, $site) = array_values($tokenParams);
+
+        // Execute
+        $detailUrl = $this->provider()
+            ->getResourceOwnerDetailsUrl($this->accessToken($tokenParams));
+
+        // Verify
+        self::assertSame(
+            "{$apiUrl}me?access_token={$accessToken}&site={$site}",
+            $detailUrl
+        );
     }
 
     public function testDefaultScopes()
     {
-        // Run
-        $method = $this->getMethod(get_class($this->provider), 'getDefaultScopes');
-        $result = $method->invoke($this->provider);
+        $getDefaultScopes = function () {
+            return $this->getDefaultScopes();
+        };
+
+        // Execute
+        $defaultScopes = $getDefaultScopes->call($this->provider());
 
         // Verify
-        $this->assertEquals([], $result);
-    }
-
-    public function testGetAccessToken()
-    {
-        // https://api.stackexchange.com/docs/authentication
-        $body = [
-            'access_token'  => 'mock_access_token',
-            'token_type'    => 'bearer',
-            'expires_in'    => \time() * 3600,
-            'refresh_token' => 'mock_refresh_token',
-        ];
-
-        $response = $this->mockResponse($body);
-        $client = $this->mockClient($response->get());
-
-        // Run
-        $this->provider->setHttpClient($client->get());
-        $token = $this->provider->getAccessToken('authorization_code', ['code' => 'mock_authorization_code']);
-
-        // Verify
-        $this->assertNull($token->getResourceOwnerId());
-        $this->assertEquals($body['access_token'], $token->getToken());
-        $this->assertEquals($body['refresh_token'], $token->getRefreshToken());
-        $this->assertGreaterThanOrEqual($body['expires_in'], $token->getExpires());
-    }
-
-    public function testUserProperty()
-    {
-        $body = [
-            'items' => [
-                0 => [
-                    'user_id' => 12345678,
-                ],
-            ],
-        ];
-
-        $tokenOptions = [
-            'access_token' => 'mock_access_token',
-            'expires_in'   => 3600,
-        ];
-
-        $token = new AccessToken($tokenOptions);
-        $response = $this->mockResponse($body);
-        $client = $this->mockClient($response->get());
-
-        // Run
-        $this->provider->setHttpClient($client->get());
-        $user = $this->provider->getResourceOwner($token);
-
-        // Verify
-        $this->assertSame([$body['items'][0]['user_id']], $user->getId());
-
-        foreach ($user->toArray() as $user) {
-            $this->assertArrayHasKey('user_id', $user);
-        }
+        self::assertSame([], $defaultScopes);
     }
 
     public function testParseResponse()
     {
-        $body = 'access_token=mock_access_token&expires=3600';
-        parse_str($body, $parsed);
+        $getParseResponse = function ($response) {
+            return $this->parseResponse($response);
+        };
 
-        $response = Phony::mock(ResponseInterface::class);
-        $response->getHeader->with('content-type')->returns('text/plain');
-        $response->getBody->returns($body);
-        $client = $this->mockClient($response->get());
+        // Mock
+        $plain = $this->mockResponse('mock_body=test', 'text/plain');
+        $default = $this->mockResponse(json_encode(['mock_body' => 'test']));
 
-        // Run
-        $method = $this->getMethod(get_class($this->provider), 'parseResponse');
-        $result = $method->invoke($this->provider, $response->get());
+        // Execute
+        $parsedPlain = $getParseResponse->call($this->provider(), $plain);
+        $parsedDefault = $getParseResponse->call($this->provider(), $default);
 
         // Verify
-        $this->assertEquals($parsed, $result);
+        self::assertSame(['mock_body' => 'test'], $parsedPlain);
+        self::assertSame(['mock_body' => 'test'], $parsedDefault);
     }
 
-    public function testErrorResponses()
+    public function testCheckResponse()
     {
+        $getParseResponse = function () use (&$response, &$data) {
+            return $this->checkResponse($response, $data);
+        };
+
+        // Stub
         $code = 400;
-        $body = [
-            'error' => [
-                'type'    => 'Foo error',
-                'message' => 'Error message',
-            ],
+        $data = ['error' => [
+            'type'    => 'Foo error',
+            'message' => 'Error message',
+        ]];
+
+        // Mock
+        $response = $this->mockResponse('', '', $code);
+
+        // Verify
+        self::expectException(StackExchangeException::class);
+        self::expectExceptionCode($code);
+        self::expectExceptionMessage(implode(': ', $data['error']));
+
+        // Execute
+        $getParseResponse->call($this->provider());
+    }
+
+    public function testCreateResourceOwner()
+    {
+        $getCreateResourceOwner = function () use (&$response, &$token) {
+            return $this->createResourceOwner($response, $token);
+        };
+
+        // Stub
+        $token = $this->accessToken();
+        $response = ['items' => [
+            0 => ['user_id' => random_int(1, 1000)],
+        ]];
+
+        // Execute
+        $resourceOwner = $getCreateResourceOwner->call($this->provider());
+
+        // Verify
+        self::assertInstanceOf(StackExchangeResourceOwner::class, $resourceOwner);
+
+        $items = $response['items'];
+        $ids = array_values($items[0]);
+
+        self::assertEquals($ids, $resourceOwner->getId());
+        self::assertSame($items, $resourceOwner->toArray());
+    }
+
+    private function provider(...$args): StackExchange
+    {
+        static $default = [
+            'clientId'     => 'mock_client_id',
+            'clientSecret' => 'mock_secret',
+            'redirectUri'  => 'mock_redirect_uri',
         ];
 
-        $response = $this->mockResponse($body);
-        $response->getStatusCode->returns($code);
-        $client = $this->mockClient($response->get());
+        $values = array_replace($default, ...$args);
 
-        $this->expectException(StackExchangeException::class);
-        $this->expectExceptionCode($code);
-        $this->expectExceptionMessage(implode(': ', $body['error']));
-
-        // Run
-        $this->provider->setHttpClient($client->get());
-        $this->provider->getAccessToken('authorization_code', ['code' => 'mock_authorization_code']);
+        return new StackExchange($values);
     }
+
+    private function apiUrl(): string
+    {
+        $getApiUrl = function () {
+            return $this->urlApi;
+        };
+
+        return $getApiUrl->call($this->provider());
+    }
+}
+
+function path(string $url): string
+{
+    return parse_url($url, PHP_URL_PATH);
 }
